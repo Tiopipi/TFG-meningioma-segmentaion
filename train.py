@@ -12,37 +12,84 @@ from monai.inferers import sliding_window_inference
 from monai.transforms import AsDiscrete
 from monai.data import decollate_batch
 
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from src.data.dataset import BraTSDataset
 from src.models.unet import build_unet3d
 from src.models.segresnet import build_segresnet
 from src.models.swinunetr import build_SwinUNETR
 from src.models.segmamba import build_segmamba
+from src.models.segmambav2 import build_segmambav2
+import configs.config as cfg
 
-def train_model():
+def train_model(
+    model_name: str = "unet3d",
+    max_epochs: int = cfg.max_epochs,
+    learning_rate: float = cfg.learning_rate,
+    val_interval: int = cfg.val_interval,
+    patience: int = cfg.patience,
+    batch_size: int = cfg.batch_size,
+    num_workers: int = cfg.num_workers
+    
+) -> None:
+    """Execute the full training and validation pipeline for the segmentation model.
+    
+    Args:
+        model_name: The name of the architecture to train.
+        max_epochs: Maximum number of training epochs.
+        learning_rate: Initial learning rate for the Adam optimizer.
+        val_interval: Number of epochs between validation phases.
+        patience: Number of validation cycles without improvement before early stopping.
+        batch_size: Number of samples per batch for data loaders.
+        num_workers: Number of subprocesses to use for data loading.
+    
+    Raises:
+        ValueError: If the provided model_name is not supported
+    """
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    print(f"Starting training on: {device}")
+    print(f"Starting training on: {device} with model: {model_name}")
     
-    max_epochs = 50
-    val_interval = 5
-    patience = 10
-    epochs_without_improvement = 0
-    best_metric = -1
+    os.makedirs(cfg.logs_dir, exist_ok=True)
+    os.makedirs(cfg.checkpoints_dir, exist_ok=True)
     
-    csv_file = "registro_metricas_segresnet.csv"
-    model_file = "best_segresnet.pth"
+    csv_file = cfg.logs_dir / f"training_{model_name.lower()}.csv"
+    model_file = cfg.checkpoints_dir / f"best_{model_name.lower()}.pth"
     
     with open(csv_file, mode='w', newline='') as f:
         writer = csv.writer(f)
         writer.writerow(["Epoch", "Avg_Loss", "Learning_Rate", "Time_s", "Max_VRAM_MB", "Validation_Dice"])
     
-    train_loader = DataLoader(BraTSDataset(split="train"), batch_size=1, shuffle=True, num_workers=4, pin_memory=True, prefetch_factor=2)
-    val_loader = DataLoader(BraTSDataset(split="val"), batch_size=1, shuffle=False, num_workers=4, pin_memory=True, prefetch_factor=2)
+    train_loader = DataLoader(
+        BraTSDataset(split="train"),
+        batch_size=batch_size,
+        shuffle=True,
+        num_workers=num_workers,
+        pin_memory=True,
+        prefetch_factor=2
+    )
+    val_loader = DataLoader(
+        BraTSDataset(split="val"),
+        batch_size=batch_size,
+        shuffle=False,
+        num_workers=num_workers,
+        pin_memory=True,
+        prefetch_factor=2
+    )
 
-    model = build_segmamba().to(device)
+    model_name_lower = model_name.lower()
+    if model_name_lower == "unet3d":
+        model = build_unet3d().to(device)
+    elif model_name_lower == "segresnet":
+        model = build_segresnet().to(device)
+    elif model_name_lower == "swinunetr":
+        model = build_SwinUNETR().to(device)
+    elif model_name_lower == "segmamba":
+        model = build_segmamba().to(device)
+    elif model_name_lower == "segmambav2":
+        model = build_segmambav2().to(device)
+    else:
+        raise ValueError(f"Model '{model_name}' is not supported. Choose a valid architecture.")
     
     loss_function = DiceLoss(to_onehot_y=True, softmax=True)
-    optimizer = torch.optim.Adam(model.parameters(), lr=1e-4)
+    optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
     
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=max_epochs)
     
@@ -51,6 +98,9 @@ def train_model():
 
     post_pred = AsDiscrete(argmax=True, to_onehot=4)
     post_label = AsDiscrete(to_onehot=4)
+    
+    epochs_without_improvement = 0
+    best_metric = -1
 
     for epoch in range(max_epochs):
         print(f"\n--- Epoch {epoch + 1}/{max_epochs} ---")
@@ -69,11 +119,13 @@ def train_model():
             inputs, labels = batch["image"].to(device), batch["label"].to(device)
             
             optimizer.zero_grad()
-            with torch.amp.autocast('cuda'):
+            with torch.amp.autocast('cuda', dtype=torch.bfloat16):
                 outputs = model(inputs)
                 loss = loss_function(outputs, labels)
             
             scaler.scale(loss).backward()
+            scaler.unscale_(optimizer)
+            torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
             scaler.step(optimizer)
             scaler.update()
             
@@ -102,7 +154,7 @@ def train_model():
                     
                     with torch.amp.autocast('cuda'):
                         val_outputs = sliding_window_inference(
-                            inputs=val_inputs, roi_size=(128, 128, 128), sw_batch_size=4, predictor=model, overlap=0.5
+                            inputs=val_inputs, roi_size=cfg.roi_size, sw_batch_size=4, predictor=model, overlap=0.5
                         )
                     
                     if hasattr(val_outputs, "as_tensor"):
@@ -133,7 +185,7 @@ def train_model():
                     }, model_file)
                     print("New best model saved.")
                 else:
-                    epochs_without_improvement += val_interval
+                    epochs_without_improvement += 1
                     print(f"No improvement for {epochs_without_improvement} epochs.")
                     
                     if epochs_without_improvement >= patience:
@@ -157,4 +209,4 @@ def train_model():
             ])
 
 if __name__ == "__main__":
-    train_model()
+    train_model(model_name="unet3d")

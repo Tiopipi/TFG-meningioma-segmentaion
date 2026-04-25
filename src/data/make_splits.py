@@ -6,7 +6,14 @@ import sys
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../../')))
 from configs.config import train_data_dir, splits_file, seed, train_ratio, val_ratio
 
-def generate_splits():
+def generate_splits() -> None:
+    """Generates train, validation and test splits grouped by patient ID.
+    
+    Scans the training data directory and groups the cases by patient ID to prevent data leakage 
+    across datasets, ensuring all cases from a single patient remain in the same split. The
+    patients are shuffled into training, validation and testing sets, saving the resulting 
+    ID lists in a JSON file. 
+    """
     if not train_data_dir.exists():
         print(f"Error: Folder not found in {train_data_dir}")
         return
