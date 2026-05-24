@@ -21,10 +21,33 @@ from src.models.segmambav2 import build_segmambav2
 import configs.config as cfg
 
 BRATS_CLASSES = [
-    {"name": "Non-enhancing Tumor Core", "acronym": "NCR"},
+    {"name": "Non-enhancing Tumor Core", "acronym": "NETC"},
     {"name": "Surrounding T2/FLAIR Hyperintensity", "acronym": "SNFH"},
     {"name": "Enhancing Tumor", "acronym": "ET"}
 ]
+
+BRATS_REGIONS = [
+    {"name": "Enhancing Tumor", "acronym": "ET"},
+    {"name": "Tumor Core", "acronym": "TC"},
+    {"name": "Whole Tumor", "acronym": "WT"},
+]
+
+def convert_to_brats_regions(onehot_tensor: torch.Tensor) -> torch.Tensor:
+    """
+    Converts a one-hot tensor of classes (Background, NETC, SNFH, ET) into BraTS regions.
+    Returns a tensor with 3 channels: [ET, TC, WT]
+    """
+    netc = onehot_tensor[1:2] 
+    snfh = onehot_tensor[2:3]  
+    et = onehot_tensor[3:4] 
+    
+    tc = torch.logical_or(netc, et).float()
+    
+    wt = torch.logical_or(tc, snfh).float()
+    
+    et_region = et.float()
+    
+    return torch.cat([et_region, tc, wt], dim=0)
 
 def evaluate_model(
     model_name: str,
@@ -34,7 +57,7 @@ def evaluate_model(
     """Evaluate a trained segmentation model on the test dataset.
     
     Calculates Dice, IoU, and 95th percentile Hausdorff Distance (HD95) 
-    metrics overall and dynamically per official BraTS subregion..
+    metrics overall and dynamically per official BraTS subregion.
 
     Args:
         model_name: The display name of the model being evaluated.
@@ -50,9 +73,13 @@ def evaluate_model(
     model.load_state_dict(checkpoint["model"])
     model.eval()
     
-    dice_metric = DiceMetric(include_background=False, reduction="mean_batch")
-    iou_metric = MeanIoU(include_background=False, reduction="mean_batch")
-    hd95_metric = HausdorffDistanceMetric(include_background=False, percentile=95, reduction="mean_batch")
+    dice_metric_cls = DiceMetric(include_background=False, reduction="mean_batch")
+    iou_metric_cls = MeanIoU(include_background=False, reduction="mean_batch")
+    hd95_metric_cls = HausdorffDistanceMetric(include_background=False, percentile=95, reduction="mean_batch")
+
+    dice_metric_reg = DiceMetric(include_background=True, reduction="mean_batch")
+    iou_metric_reg = MeanIoU(include_background=True, reduction="mean_batch")
+    hd95_metric_reg = HausdorffDistanceMetric(include_background=True, percentile=95, reduction="mean_batch")
     
     post_pred = AsDiscrete(argmax=True, to_onehot=cfg.num_classes)
     post_label = AsDiscrete(to_onehot=cfg.num_classes)
@@ -80,33 +107,42 @@ def evaluate_model(
             outputs_list = [post_pred(i) for i in decollate_batch(outputs)]
             labels_list = [post_label(i) for i in decollate_batch(labels)]
             
-            dice_metric(y_pred=outputs_list, y=labels_list)
-            iou_metric(y_pred=outputs_list, y=labels_list)
-            hd95_metric(y_pred=outputs_list, y=labels_list)
+            dice_metric_cls(y_pred=outputs_list, y=labels_list)
+            iou_metric_cls(y_pred=outputs_list, y=labels_list)
+            hd95_metric_cls(y_pred=outputs_list, y=labels_list)
 
-    dice_per_class = dice_metric.aggregate()
-    iou_per_class = iou_metric.aggregate()
-    hd95_per_class = hd95_metric.aggregate()
+            outputs_regions = [convert_to_brats_regions(i) for i in outputs_list]
+            labels_regions = [convert_to_brats_regions(i) for i in labels_list]
 
-    mean_dice = torch.nanmean(dice_per_class).item()
-    mean_iou = torch.nanmean(iou_per_class).item()
-    mean_hd95 = torch.nanmean(hd95_per_class).item()
+            dice_metric_reg(y_pred=outputs_regions, y=labels_regions)
+            iou_metric_reg(y_pred=outputs_regions, y=labels_regions)
+            hd95_metric_reg(y_pred=outputs_regions, y=labels_regions)
 
-    dice_list = dice_per_class.tolist()
-    iou_list = iou_per_class.tolist()
-    hd95_list = hd95_per_class.tolist()
+    mean_dice_cls = torch.nanmean(dice_metric_cls.aggregate()).item()
+    mean_iou_cls = torch.nanmean(iou_metric_cls.aggregate()).item()
+    mean_hd95_cls = torch.nanmean(hd95_metric_cls.aggregate()).item()
+    dice_list_cls = dice_metric_cls.aggregate().tolist()
+    iou_list_cls = iou_metric_cls.aggregate().tolist()
+    hd95_list_cls = hd95_metric_cls.aggregate().tolist()
+
+    dice_list_reg = dice_metric_reg.aggregate().tolist()
+    iou_list_reg = iou_metric_reg.aggregate().tolist()
+    hd95_list_reg = hd95_metric_reg.aggregate().tolist()
 
     mean_time = sum(inference_times) / len(inference_times)
     max_memory_mb = torch.cuda.max_memory_allocated() / (1024 * 1024) if torch.cuda.is_available() else 0
 
-    print(f"\n--- Global Results ({model_name}) ---")
-    print(f"Dice: {mean_dice:.4f} | IoU: {mean_iou:.4f} | HD95: {mean_hd95:.4f} mm")
+    print(f"\n--- Global Results (Classes) ({model_name}) ---")
+    print(f"Dice: {mean_dice_cls:.4f} | IoU: {mean_iou_cls:.4f} | HD95: {mean_hd95_cls:.4f} mm")
     print(f"Mean Time: {mean_time:.2f} s | Max VRAM: {max_memory_mb:.2f} MB")
     
-    print(f"\n--- Breakdown by Subregion ---")
+    print(f"\n--- Breakdown by Class ---")
     for i, class_info in enumerate(BRATS_CLASSES):
-        name = class_info["name"]
-        print(f"{name:<38}: Dice {dice_list[i]:.4f} | IoU {iou_list[i]:.4f} | HD95 {hd95_list[i]:.4f} mm")
+        print(f"{class_info['name']:<38}: Dice {dice_list_cls[i]:.4f} | IoU {iou_list_cls[i]:.4f} | HD95 {hd95_list_cls[i]:.4f} mm")
+
+    print(f"\n--- Breakdown by Region (State of the Art comparison) ---")
+    for i, reg_info in enumerate(BRATS_REGIONS):
+        print(f"{reg_info['name']:<38}: Dice {dice_list_reg[i]:.4f} | IoU {iou_list_reg[i]:.4f} | HD95 {hd95_list_reg[i]:.4f} mm")
     print("\n")
     
     os.makedirs(cfg.logs_dir, exist_ok=True)
@@ -116,16 +152,29 @@ def evaluate_model(
     with open(csv_file, mode='a', newline='') as f:
         writer = csv.writer(f)
         if not file_exists:
-            headers = ["Model", "Dice_Global"] + [f"Dice_{c['acronym']}" for c in BRATS_CLASSES] + \
-                      ["IoU_Global"] + [f"IoU_{c['acronym']}" for c in BRATS_CLASSES] + \
-                      ["HD95_Global"] + [f"HD95_{c['acronym']}" for c in BRATS_CLASSES] + \
+            headers = ["Modelo", "Dice_Global"] + \
+                      [f"Dice_CLS_{c['acronym']}" for c in BRATS_CLASSES] + \
+                      [f"Dice_REG_{r['acronym']}" for r in BRATS_REGIONS] + \
+                      ["IoU_Global"] + \
+                      [f"IoU_CLS_{c['acronym']}" for c in BRATS_CLASSES] + \
+                      [f"IoU_REG_{r['acronym']}" for r in BRATS_REGIONS] + \
+                      ["HD95_Global"] + \
+                      [f"HD95_CLS_{c['acronym']}" for c in BRATS_CLASSES] + \
+                      [f"HD95_REG_{r['acronym']}" for r in BRATS_REGIONS] + \
                       ["Time_s", "VRAM_MB"]
             writer.writerow(headers)
         
-        row_data = [model_name, f"{mean_dice:.4f}"] + [f"{val:.4f}" for val in dice_list] + \
-                   [f"{mean_iou:.4f}"] + [f"{val:.4f}" for val in iou_list] + \
-                   [f"{mean_hd95:.4f}"] + [f"{val:.4f}" for val in hd95_list] + \
+        row_data = [model_name, f"{mean_dice_cls:.4f}"] + \
+                   [f"{val:.4f}" for val in dice_list_cls] + \
+                   [f"{val:.4f}" for val in dice_list_reg] + \
+                   [f"{mean_iou_cls:.4f}"] + \
+                   [f"{val:.4f}" for val in iou_list_cls] + \
+                   [f"{val:.4f}" for val in iou_list_reg] + \
+                   [f"{mean_hd95_cls:.4f}"] + \
+                   [f"{val:.4f}" for val in hd95_list_cls] + \
+                   [f"{val:.4f}" for val in hd95_list_reg] + \
                    [f"{mean_time:.2f}", f"{max_memory_mb:.2f}"]
+        
         writer.writerow(row_data)
 
 

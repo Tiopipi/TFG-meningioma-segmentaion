@@ -125,11 +125,13 @@ def train_model(
             
             scaler.scale(loss).backward()
             scaler.unscale_(optimizer)
-            torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
+            if model_name_lower == "segmambav2":
+                torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
             scaler.step(optimizer)
             scaler.update()
             
             epoch_loss += loss.item()
+            avg_loss = epoch_loss / step if step > 0 else 0.0
             pbar.set_postfix({"loss": f"{loss.item():.4f}"})
         
         epoch_end_time = time.time()
@@ -138,8 +140,9 @@ def train_model(
         max_memory_mb = 0
         if torch.cuda.is_available():
             max_memory_mb = torch.cuda.max_memory_allocated() / (1024 * 1024)
-            
-        print(f"Average loss: {epoch_loss/step:.4f} | Current LR: {scheduler.get_last_lr()[0]:.6f}")
+        
+        current_lr = scheduler.get_last_lr()[0]
+        print(f"Average loss: {avg_loss:.4f} | Current LR: {current_lr:.6f}")
         print(f"Time: {epoch_time:.2f} s | Max VRAM: {max_memory_mb:.2f} MB")
         
         scheduler.step()
@@ -194,15 +197,15 @@ def train_model(
                         
                         with open(csv_file, mode='a', newline='') as f:
                             writer = csv.writer(f)
-                            writer.writerow([epoch + 1, f"{epoch_loss/step:.4f}", f"{scheduler.get_last_lr()[0]:.6f}", f"{epoch_time:.2f}", f"{max_memory_mb:.2f}", dice_csv])
+                            writer.writerow([epoch + 1, f"{avg_loss:.4f}", f"{scheduler.get_last_lr()[0]:.6f}", f"{epoch_time:.2f}", f"{max_memory_mb:.2f}", dice_csv])
                         return
 
         with open(csv_file, mode='a', newline='') as f:
             writer = csv.writer(f)
             writer.writerow([
                 epoch + 1, 
-                f"{epoch_loss/step:.4f}", 
-                f"{scheduler.get_last_lr()[0]:.6f}", 
+                f"{avg_loss:.4f}", 
+                f"{current_lr:.6f}", 
                 f"{epoch_time:.2f}", 
                 f"{max_memory_mb:.2f}", 
                 dice_csv
