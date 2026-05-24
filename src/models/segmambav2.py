@@ -401,13 +401,13 @@ def build_segmambav2() -> SegMamba:
 
     Initiates the SegMamba-V2 architecture for 4 input channels (modalities) and
     4 output channels (segmentation classes), along with standard depths and
-    feature sizes.
+    feature sizes. It also includes a drop path rate set to 0.3 to mitigate and
+    prevent overfitting during the training phase.
     """
     model = SegMamba(
         in_chans=4,
         out_chans=4,
-        depths=[2, 2, 2, 2],
-        feat_size=[48, 96, 192, 384]
+        drop_path_rate=0.3
     )
     
     return model
