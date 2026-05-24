@@ -12,6 +12,8 @@ base_dir = Path(__file__).resolve().parent.parent
 # Input data
 data_dir = base_dir / "data"
 train_data_dir = data_dir / "brats-train-val-2023" / "BraTS-MEN-Train"
+val_data_dir = data_dir / "brats-train-val-2023" / "BraTS-MEN-Validation"
+clinical_data = data_dir / "brats-train-val-2023" / "Meningioma supplementary clinical data and imaging parameters for training and validation sets (1).xlsx"
 splits_file = data_dir / "splits.json"
 
 # Output directories
@@ -19,6 +21,7 @@ checkpoints_dir = base_dir / "checkpoints"
 logs_dir = base_dir / "logs"
 graphs_dir = base_dir / "graphs"
 cache_dir = base_dir / "cache_brats"
+data_analysis_dir = base_dir / "data_analysis"
 
 # Seed and Data Splits 
 seed = 33
