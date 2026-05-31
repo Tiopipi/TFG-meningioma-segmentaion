@@ -1,0 +1,15 @@
+Third-party code notice
+
+This repository includes modified third-party code used for academic purposes.
+
+SegMamba
+Original repository: https://github.com/ge-xing/SegMamba
+Original work: SegMamba: Long-range Sequential Modeling Mamba for 3D Medical Image Segmentation
+
+SegMamba-V2
+Original repository: https://github.com/ge-xing/SegMamba-V2
+Original work: SegMamba-V2: Long-range Sequential Modeling with Mamba for General 3D Medical Image Segmentation
+
+The original code has been adapted to fit the experimental framework of this project.
+
+Some source files include components derived from or based on MONAI code, licensed under the Apache License, Version 2.0.
