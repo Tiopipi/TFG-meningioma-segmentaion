@@ -19,7 +19,7 @@ def main() -> None:
     # 1. Configuration and Setup
     setup_plotting_environment(
         output_dir=cfg.data_analysis_dir, 
-        font_size=14, 
+        font_size=16, 
         title_size=18
     )
 
@@ -78,7 +78,7 @@ def main() -> None:
 
     plt.tight_layout()
     
-    output_path = cfg.data_analysis_dir / "caso_modalidades_mascara.svg"
+    output_path = cfg.data_analysis_dir / "modalidades.svg"
     plt.savefig(output_path, format='svg', bbox_inches="tight")
     plt.close()
     

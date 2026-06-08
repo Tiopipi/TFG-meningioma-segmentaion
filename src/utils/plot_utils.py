@@ -22,7 +22,7 @@ def setup_plotting_environment(output_dir: Path, font_size: int = 14, title_size
     os.makedirs(output_dir, exist_ok=True)
     
     if use_seaborn:
-        sns.set_theme(style="whitegrid", context="paper", font_scale=1.2)
+        sns.set_style(style="whitegrid")
         
     plt.rcParams.update({
         'font.size': font_size,

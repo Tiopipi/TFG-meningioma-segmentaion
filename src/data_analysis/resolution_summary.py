@@ -60,7 +60,7 @@ def plot_resolution_boxplots(resolution_df: pd.DataFrame) -> None:
     """Generate and save boxplots for spatial resolution parameters."""
     modalities = ["T1", "T1c", "T2", "FLAIR"]
 
-    fig, axes = plt.subplots(1, 3, figsize=(15, 4))
+    fig, axes = plt.subplots(1, 3, figsize=(15, 5))
 
     variables = [
         ("x_resolution", "Resolución en x (mm)"),
@@ -79,17 +79,17 @@ def plot_resolution_boxplots(resolution_df: pd.DataFrame) -> None:
         ax.set_ylabel("mm")
         ax.grid(axis="y", alpha=0.3)
 
-    plt.tight_layout()
+    plt.tight_layout(pad=0.5)
     output_path = cfg.data_analysis_dir / "resolution_parameters_boxplots.svg"
-    plt.savefig(output_path, format="svg")
+    plt.savefig(output_path, format="svg", bbox_inches='tight')
     plt.close(fig)
 
 def main() -> None:
     # 1. Configuration and Setup
     setup_plotting_environment(
         output_dir=cfg.data_analysis_dir, 
-        font_size=13, 
-        title_size=16
+        font_size=18, 
+        title_size=20
     )
 
     # 2. Data Loading

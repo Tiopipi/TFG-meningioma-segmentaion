@@ -13,11 +13,13 @@ import sys
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
 import configs.config as cfg
+from src.utils.plot_utils import setup_plotting_environment
+
 
 def main() -> None:
     # 1. Configuration and Setup
-    sns.set_theme(style="whitegrid", context="paper", font_scale=1.2)
-    plt.rcParams["figure.dpi"] = 300
+    setup_plotting_environment(output_dir=cfg.graphs_dir, use_seaborn=True,
+                               font_size=14, title_size=16)
 
     os.makedirs(cfg.graphs_dir, exist_ok=True)
 
@@ -64,7 +66,7 @@ def main() -> None:
                         xy=(best_epoch['Epoch'], best_epoch['Validation_Loss']),
                         xytext=(best_epoch['Epoch'] - offset_x, offset_y),
                         arrowprops=dict(facecolor='black', shrink=0.05, width=1.5, headwidth=8),
-                        fontsize=10, weight='bold')
+                        fontsize=14, weight='bold')
 
         ax.legend(loc='upper right')
 

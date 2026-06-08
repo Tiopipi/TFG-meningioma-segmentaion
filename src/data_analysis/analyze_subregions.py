@@ -23,7 +23,8 @@ from src.utils.plot_utils import setup_plotting_environment
 
 def main() -> None:
     # 1. Configuration and Setup
-    setup_plotting_environment(output_dir=cfg.data_analysis_dir, use_seaborn=True)
+    setup_plotting_environment(output_dir=cfg.data_analysis_dir, use_seaborn=True,
+                               font_size=18, title_size=20)
 
     VOXEL_VOL_MM3 = 1.0  
     LABELS = {1: "NETC", 2: "SNFH", 3: "ET"}
@@ -95,7 +96,7 @@ def main() -> None:
         palette="viridis"
     )
     ax1.set_title("Presencia de subregiones en el dataset", fontweight="bold", pad=15)
-    ax1.set_ylabel("Porcentaje de pacientes (%)")
+    ax1.set_ylabel("Porcentaje de pacientes (%)", labelpad=15)
     ax1.set_ylim(0, 110)
     for i, val in enumerate(presence_stats.values()):
         ax1.text(i, val + 2, f"{val:.1f}%", ha='center', va='bottom', fontweight='bold')
@@ -115,7 +116,7 @@ def main() -> None:
     )
     ax2.set_title("Combinaciones topológicas presentes en los tumores", fontweight="bold", pad=15)
     ax2.set_xlabel("Número de pacientes")
-    ax2.set_ylabel("Combinación de subregiones")
+    ax2.set_ylabel("Combinación de subregiones", labelpad=15)
     
     for p in ax2.patches:
         width = p.get_width()
@@ -147,7 +148,7 @@ def main() -> None:
         showfliers=False
     )
     ax3.set_title("Volumen condicional (cuando está presente)", fontweight="bold", pad=15)
-    ax3.set_ylabel("Volumen (mm³)")
+    ax3.set_ylabel("Volumen (mm³)", labelpad=15)
 
     plt.tight_layout()
     out_box = cfg.data_analysis_dir / "label_conditional_volume_box.svg"

@@ -18,11 +18,13 @@ import sys
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
 import configs.config as cfg
+from src.utils.plot_utils import setup_plotting_environment
+
 
 def main() -> None:
     # 1. Configuration and Setup
-    sns.set_theme(style="whitegrid", context="paper", font_scale=1.2)
-    plt.rcParams["figure.dpi"] = 300
+    setup_plotting_environment(output_dir=cfg.graphs_dir, use_seaborn=True,
+                               font_size=14, title_size=16)
 
     os.makedirs(cfg.graphs_dir, exist_ok=True)
 
@@ -39,6 +41,7 @@ def main() -> None:
         dfs.append(df)
 
     data = pd.concat(dfs, ignore_index=True)
+    data = data.sort_values(by="Dice_Global", ascending=True).reset_index(drop=True)
 
     # 3. Plot Generation
     # Graph 1: Global Comparison (Dice and IoU)
@@ -50,7 +53,7 @@ def main() -> None:
     plt.title("Rendimiento general de la segmentación")
     plt.ylim(0, 1)
     plt.ylabel("Puntuación (0 - 1)")
-    plt.legend(title="Métrica")
+    plt.legend(title="Métrica", loc='upper left', borderaxespad=0.)
     plt.tight_layout()
     plt.savefig(cfg.graphs_dir / "1_overall_performance.svg", format='svg')
     plt.close()
@@ -64,10 +67,10 @@ def main() -> None:
 
     sns.barplot(data=df_melted_dice, x="Modelo", y="Dice", hue="Subregion", palette="mako")
     plt.title("Coeficiente Dice por subregión del tumor")
-    plt.ylim(0, 1)
+    plt.ylim(0, 1.3)
     plt.ylabel("Coeficiente Dice")
 
-    plt.legend(title="Subregión (NETC, SNFH, ET)", bbox_to_anchor=(1.02, 1), loc='upper left', borderaxespad=0.)
+    plt.legend(title="Subregión (NETC, SNFH, ET)", loc='upper left', borderaxespad=0.)
 
     plt.tight_layout()
     plt.savefig(cfg.graphs_dir / "2_dice_by_class.svg", format='svg')
@@ -75,13 +78,20 @@ def main() -> None:
 
     # Graph 3: Hausdorff Distance 
     plt.figure(figsize=(8, 6))
-    sns.barplot(data=data, x="Modelo", y="HD95_Global", palette="rocket")
+    order_hd95 = data.sort_values(by="HD95_Global", ascending=False)["Modelo"]
+    ax3 = sns.barplot(data=data, x="Modelo", y="HD95_Global", palette="rocket", order=order_hd95)
     plt.title("Distancia global de Hausdorff al 95% (Menor es mejor)")
     plt.ylabel("Milímetros (mm)")
 
-    for index, row in data.iterrows():
-        plt.text(index, row.HD95_Global + 0.5, f"{row.HD95_Global:.1f}", color='black', ha="center")
+    for p in ax3.patches:
+        ax3.annotate(f"{p.get_height():.1f}", 
+                     (p.get_x() + p.get_width() / 2., p.get_height()), 
+                     ha='center', va='bottom', 
+                     xytext=(0, 5),
+                     textcoords='offset points',
+                     color='black')
 
+    plt.ylim(0, data["HD95_Global"].max() * 1.15)
     plt.tight_layout()
     plt.savefig(cfg.graphs_dir / "3_global_hausdorff.svg", format='svg')
     plt.close()
@@ -125,9 +135,14 @@ def main() -> None:
 
         draw_3d_balloon(ax1, x_val, y_val, area, color_dict[current_model])
         
-        ax1.text(x_val + 1.5, y_val, 
-                f"{current_model}\n({vram_val/1024:.1f} GB)", 
-                size=9, color='black', weight='bold', zorder=4)
+        radius_pts = np.sqrt(area / np.pi)
+        
+        ax1.annotate(f"{current_model}\n({vram_val/1024:.1f} GB)", 
+                     xy=(x_val, y_val), 
+                     xytext=(0, -(radius_pts + 5)), 
+                     textcoords="offset points", 
+                     ha='center', va='top', 
+                     size=10, color='black', weight='bold', zorder=4)
 
     legend_elements = [Line2D([0], [0], marker='o', color='w', markerfacecolor=color_dict[m], 
                               markersize=10, markeredgecolor='black', label=m) for m in models]
@@ -169,16 +184,22 @@ def main() -> None:
     
     data_sota = pd.concat([data, sota_df], ignore_index=True)
 
+    data_sota["Dice_Mean"] = data_sota[reg_dice_cols].mean(axis=1)
+    data_sota["HD95_Mean"] = data_sota[reg_hd95_cols].mean(axis=1)
+    
+    order_sota_dice = data_sota.sort_values(by="Dice_Mean", ascending=True)["Modelo"]
+    order_sota_hd95 = data_sota.sort_values(by="HD95_Mean", ascending=False)["Modelo"]
+
     # Graph 5: Dice Breakdown by Regions (WT, TC, ET)
     plt.figure(figsize=(10, 6))
     df_melted_dice_reg = data_sota.melt(id_vars="Modelo", value_vars=reg_dice_cols, 
                             var_name="Region", value_name="Dice")
     df_melted_dice_reg['Region'] = df_melted_dice_reg['Region'].str.replace('Dice_REG_', '')
-    sns.barplot(data=df_melted_dice_reg, x="Modelo", y="Dice", hue="Region", palette="crest")
+    sns.barplot(data=df_melted_dice_reg, x="Modelo", y="Dice", hue="Region", palette="crest", order=order_sota_dice)
     plt.title("Coeficiente Dice por región estándar frente al Estado del Arte")
-    plt.ylim(0, 1)
+    plt.ylim(0, 1.3)
     plt.ylabel("Coeficiente Dice")
-    plt.legend(title="Regiones (SOTA)", bbox_to_anchor=(1.02, 1), loc='upper left', borderaxespad=0.)
+    plt.legend(title="Regiones (SOTA)", loc='upper left', borderaxespad=0.)
     plt.tight_layout()
     plt.savefig(cfg.graphs_dir / "5_dice_by_region_sota.svg", format='svg')
     plt.close()
@@ -188,10 +209,12 @@ def main() -> None:
     df_melted_hd95_reg = data_sota.melt(id_vars="Modelo", value_vars=reg_hd95_cols, 
                             var_name="Region", value_name="HD95")
     df_melted_hd95_reg['Region'] = df_melted_hd95_reg['Region'].str.replace('HD95_REG_', '')
-    sns.barplot(data=df_melted_hd95_reg, x="Modelo", y="HD95", hue="Region", palette="flare")
+    sns.barplot(data=df_melted_hd95_reg, x="Modelo", y="HD95", hue="Region", palette="flare", order=order_sota_hd95)
+    max_hd95_val = data_sota[reg_hd95_cols].max().max()
+    plt.ylim(0, max_hd95_val * 1.35)
     plt.title("Distancia Hausdorff 95% por región estándar frente al Estado del Arte")
     plt.ylabel("Milímetros (mm)")
-    plt.legend(title="Regiones (SOTA)", bbox_to_anchor=(1.02, 1), loc='upper left', borderaxespad=0.)
+    plt.legend(title="Regiones (SOTA)", loc='upper left', borderaxespad=0.)
     plt.tight_layout()
     plt.savefig(cfg.graphs_dir / "6_hd95_by_region_sota.svg", format='svg')
     plt.close()
